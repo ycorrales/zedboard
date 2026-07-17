@@ -1,0 +1,58 @@
+; 16-bit configuration packed array for Zedboard OLED
+;
+; line 1: Hardware Initialization: Turn on VDD power rail (1ms delay)
+; line 2: Hardware Initialization: Assert Reset line (1ms delay)
+; line 3: Hardware Initialization: Release Reset line (1ms delay)
+; line 4: Command: Display OFF (0xAE)
+; line 5: Command: Set Clock Divide Ratio (0xD5)
+; line 6: Data: Clock value parameter (0x80)
+; line 7: Command: Set Multiplex Ratio (0xA8)
+; line 8: Data: 1/32 multiplex configuration duty (0x1F)
+; line 9: Command: Set Display Offset Shift (0xD3)
+; line 10: Data: Offset value parameter 0 (0x00)
+; line 11: Command: Set Display RAM Start Line 0 (0x40)
+; line 12: Command: Set Charge Pump Circuitry (0x8D)
+; line 13: Data: Enable internal DC-DC converter (0x14)
+; line 14: Command: Segment Re-map Normal (0xA0) -> Unmirrored for your fixed code
+; line 15: Command: COM Scan Direction Normal (0xC0) -> Right-side up text orientation
+; line 16: Command: Hardware COM Pins Configuration (0xDA)
+; line 17: Data: Sequential pin config, disable L/R remap (0x02)
+; line 18: Command: Access Contrast Current Register (0x81)
+; line 19: Data: Upgraded Medium-Bright current parameter (0x7F)
+; line 20: Command: Set Pre-charge Period Phases (0xD9)
+; line 21: Data: Phase 1 & 2 configuration values (0xF1)
+; line 22: Command: Set VCOMH Deselect Voltage Regulator (0xDB)
+; line 23: Data: Regulator factor output parameter (0x40)
+; line 24: Command: Resume to GDDRAM Display Content Playback (0xA4)
+; line 25: Command: Disable Inverse Mode / Set Normal Color (0xA6)
+; line 26: Hardware Initialization: Turn on VBAT high-voltage line (100ms delay)
+; line 27: Command: Display ON (0xAF)
+memory_initialization_radix=16;
+memory_initialization_vector=
+    0801,
+    2001,
+    3001,
+    40AE,
+    40D5,
+    4080,
+    40A8,
+    401F,
+    40D3,
+    4000,
+    4040,
+    408D,
+    4014,
+    40A0,
+    40C0,
+    40DA,
+    4002,
+    4081,
+    407F,
+    40D9,
+    40F1,
+    40DB,
+    4040,
+    40A4,
+    40A6,
+    0264,
+    40AF;

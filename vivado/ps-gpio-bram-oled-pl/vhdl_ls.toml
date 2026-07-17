@@ -1,0 +1,26 @@
+# What standard to use. This is optional and defaults to VHDL 2008.
+standard = "2008"
+# The preferred case for completions.
+preferred_case = "lower"
+
+# File names are either absolute or relative to the parent folder of the vhdl_ls.toml file
+[libraries]
+worklibs.files = [
+  "./src/*/*.vhd",
+]
+
+# Libraries can be marked as third-party to disable some analysis warnings, such as unused declarations
+UNISIM.files = [
+  # "/opt/Xilinx/Vivado/2020.1/data/vhdl/src/unisims/unisim_VCOMP.vhd",
+  "/opt/homebrew/Caskroom/ghdl/6.0.0/ghdl-llvm-6.0.0-macos15-aarch64/lib/ghdl/libraries/unisim/unisim_VCOMP.vhd"
+]
+UNISIM.is_third_party = true
+# Libraries can be marked as third-party to disable some analysis warnings, such as unused declarations
+XPM.files = [
+  # "/opt/Xilinx/Vivado/2020.1/data/ip/xpm/xpm_VCOMP.vhd",
+]
+XPM.is_third_party = true
+
+[lint]
+# unused = "error"  # Upgrade the 'unused' diagnostic to the 'error' severity
+unnecessary_work_library = false  # Disable linting for the 'library work;' statement

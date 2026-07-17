@@ -1,0 +1,2 @@
+ps-gpio-bram-oled-pl/src/hdl/zynq_zed_ex_top.vhd top=zynq_zed_ex_top
+ps-gpio-bram-oled-pl/src/hdl/*.vhd

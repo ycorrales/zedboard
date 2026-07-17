@@ -1,0 +1,3 @@
+pl-oled/src/hdl/top.vhd top=top
+pl-oled/src/hdl/*.vhd
+pl-oled/src/others/*
