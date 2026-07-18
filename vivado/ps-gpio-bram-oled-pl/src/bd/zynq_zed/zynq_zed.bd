@@ -17,7 +17,8 @@
       "blk_mem_gen_0": "",
       "axi_gpio_0": "",
       "axi_gpio_1": "",
-      "xlconcat_0": ""
+      "xlconcat_0": "",
+      "axi_intc_0": ""
     },
     "interface_ports": {
       "LEDS_8BITS": {
@@ -2202,7 +2203,7 @@
         "inst_hier_path": "smartconnect_0",
         "parameters": {
           "NUM_MI": {
-            "value": "3"
+            "value": "4"
           },
           "NUM_SI": {
             "value": "1"
@@ -2224,7 +2225,8 @@
             "bridges": [
               "M00_AXI",
               "M01_AXI",
-              "M02_AXI"
+              "M02_AXI",
+              "M03_AXI"
             ]
           },
           "M00_AXI": {
@@ -2290,6 +2292,37 @@
             }
           },
           "M02_AXI": {
+            "mode": "Master",
+            "vlnv_bus_definition": "xilinx.com:interface:aximm:1.0",
+            "vlnv": "xilinx.com:interface:aximm_rtl:1.0",
+            "parameters": {
+              "MAX_BURST_LENGTH": {
+                "value": "1"
+              },
+              "NUM_READ_OUTSTANDING": {
+                "value": "8"
+              },
+              "NUM_READ_THREADS": {
+                "value": "1"
+              },
+              "NUM_WRITE_OUTSTANDING": {
+                "value": "8"
+              },
+              "NUM_WRITE_THREADS": {
+                "value": "1"
+              },
+              "RUSER_BITS_PER_BYTE": {
+                "value": "0"
+              },
+              "SUPPORTS_NARROW_BURST": {
+                "value": "0"
+              },
+              "WUSER_BITS_PER_BYTE": {
+                "value": "0"
+              }
+            }
+          },
+          "M03_AXI": {
             "mode": "Master",
             "vlnv_bus_definition": "xilinx.com:interface:aximm:1.0",
             "vlnv": "xilinx.com:interface:aximm_rtl:1.0",
@@ -2401,6 +2434,21 @@
         "xci_name": "zynq_zed_xlconcat_0_0",
         "xci_path": "ip/zynq_zed_xlconcat_0_0/zynq_zed_xlconcat_0_0.xci",
         "inst_hier_path": "xlconcat_0"
+      },
+      "axi_intc_0": {
+        "vlnv": "xilinx.com:ip:axi_intc:4.1",
+        "ip_revision": "19",
+        "xci_name": "zynq_zed_axi_intc_0_0",
+        "xci_path": "ip/zynq_zed_axi_intc_0_0/zynq_zed_axi_intc_0_0.xci",
+        "inst_hier_path": "axi_intc_0",
+        "parameters": {
+          "C_HAS_FAST": {
+            "value": "0"
+          },
+          "C_KIND_OF_EDGE": {
+            "value": "0xFFFFFFFF"
+          }
+        }
       }
     },
     "interface_nets": {
@@ -2475,6 +2523,12 @@
           "smartconnect_0/M02_AXI",
           "axi_gpio_1/S_AXI"
         ]
+      },
+      "smartconnect_0_M03_AXI": {
+        "interface_ports": [
+          "smartconnect_0/M03_AXI",
+          "axi_intc_0/s_axi"
+        ]
       }
     },
     "nets": {
@@ -2490,6 +2544,12 @@
           "xlconcat_0/In0"
         ]
       },
+      "axi_intc_0_irq": {
+        "ports": [
+          "axi_intc_0/irq",
+          "processing_system7_0/IRQ_F2P"
+        ]
+      },
       "proc_sys_reset_0_interconnect_aresetn": {
         "ports": [
           "proc_sys_reset_0/interconnect_aresetn",
@@ -2502,7 +2562,8 @@
           "axi_bram_ctrl_0/s_axi_aresetn",
           "axi_gpio_0/s_axi_aresetn",
           "peripheral_aresetn",
-          "axi_gpio_1/s_axi_aresetn"
+          "axi_gpio_1/s_axi_aresetn",
+          "axi_intc_0/s_axi_aresetn"
         ]
       },
       "processing_system7_0_FCLK_CLK0": {
@@ -2514,7 +2575,8 @@
           "axi_bram_ctrl_0/s_axi_aclk",
           "axi_gpio_0/s_axi_aclk",
           "FCLK_CLK0",
-          "axi_gpio_1/s_axi_aclk"
+          "axi_gpio_1/s_axi_aclk",
+          "axi_intc_0/s_axi_aclk"
         ]
       },
       "processing_system7_0_FCLK_RESET0_N": {
@@ -2526,7 +2588,7 @@
       "xlconcat_0_dout": {
         "ports": [
           "xlconcat_0/dout",
-          "processing_system7_0/IRQ_F2P"
+          "axi_intc_0/intr"
         ]
       }
     },
@@ -2549,6 +2611,11 @@
                 "address_block": "/axi_gpio_1/S_AXI/Reg",
                 "offset": "0x41210000",
                 "range": "4K"
+              },
+              "SEG_axi_intc_0_Reg": {
+                "address_block": "/axi_intc_0/S_AXI/Reg",
+                "offset": "0x41800000",
+                "range": "64K"
               }
             }
           }

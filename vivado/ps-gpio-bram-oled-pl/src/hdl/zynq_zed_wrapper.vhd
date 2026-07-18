@@ -1,9 +1,9 @@
 -- Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
--- Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+-- Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
 ----------------------------------------------------------------------------------
--- Tool Version: Vivado v.2026.1 (lin64) Build 6511674 Tue Jun 16 11:01:26 MDT 2026
--- Date        : Sun Jul  5 07:31:20 2026
--- Host        : mvtx.cern.ch running 64-bit AlmaLinux 9.8 (Olive Jaguar)
+-- Tool Version: Vivado v.2024.1 (lin64) Build 5076996 Wed May 22 18:36:09 MDT 2024
+-- Date        : Sat Jul 18 12:48:23 2026
+-- Host        : localhost.localdomain running 64-bit unknown
 -- Command     : generate_target zynq_zed_wrapper.bd
 -- Design      : zynq_zed_wrapper
 -- Purpose     : IP block netlist
@@ -91,9 +91,9 @@ architecture structure of zynq_zed_wrapper is
       GPIO_0_0_TRI_I     : in    std_logic_vector( 5 downto 0);
       GPIO_0_0_TRI_O     : out   std_logic_vector( 5 downto 0);
       GPIO_0_0_TRI_T     : out   std_logic_vector( 5 downto 0);
+      BTNS_5BITS_TRI_I   : in    std_logic_vector( 4 downto 0);
       FCLK_CLK0          : out   std_logic;
-      PERIPHERAL_ARESETN : out   std_logic_vector( 0 to 0);
-      BTNS_5BITS_TRI_I   : in    std_logic_vector( 4 downto 0)
+      PERIPHERAL_ARESETN : out   std_logic_vector( 0 to 0)
     );
   end component zynq_zed;
 
@@ -106,24 +106,30 @@ architecture structure of zynq_zed_wrapper is
     );
   end component iobuf;
 
-  signal gpio_0_0_tri_i_0 : std_logic_vector( 0 to 0);
-  signal gpio_0_0_tri_i_1 : std_logic_vector( 1 to 1);
-  signal gpio_0_0_tri_i_2 : std_logic_vector( 2 to 2);
-  signal gpio_0_0_tri_i_3 : std_logic_vector( 3 to 3);
-  signal gpio_0_0_tri_i_4 : std_logic_vector( 4 to 4);
-  signal gpio_0_0_tri_i_5 : std_logic_vector( 5 to 5);
-  signal gpio_0_0_tri_o_0 : std_logic_vector( 0 to 0);
-  signal gpio_0_0_tri_o_1 : std_logic_vector( 1 to 1);
-  signal gpio_0_0_tri_o_2 : std_logic_vector( 2 to 2);
-  signal gpio_0_0_tri_o_3 : std_logic_vector( 3 to 3);
-  signal gpio_0_0_tri_o_4 : std_logic_vector( 4 to 4);
-  signal gpio_0_0_tri_o_5 : std_logic_vector( 5 to 5);
-  signal gpio_0_0_tri_t_0 : std_logic_vector( 0 to 0);
-  signal gpio_0_0_tri_t_1 : std_logic_vector( 1 to 1);
-  signal gpio_0_0_tri_t_2 : std_logic_vector( 2 to 2);
-  signal gpio_0_0_tri_t_3 : std_logic_vector( 3 to 3);
-  signal gpio_0_0_tri_t_4 : std_logic_vector( 4 to 4);
-  signal gpio_0_0_tri_t_5 : std_logic_vector( 5 to 5);
+  signal gpio_0_0_tri_i_0  : std_logic_vector( 0 to 0);
+  signal gpio_0_0_tri_i_1  : std_logic_vector( 1 to 1);
+  signal gpio_0_0_tri_i_2  : std_logic_vector( 2 to 2);
+  signal gpio_0_0_tri_i_3  : std_logic_vector( 3 to 3);
+  signal gpio_0_0_tri_i_4  : std_logic_vector( 4 to 4);
+  signal gpio_0_0_tri_i_5  : std_logic_vector( 5 to 5);
+  signal gpio_0_0_tri_io_0 : std_logic_vector( 0 to 0);
+  signal gpio_0_0_tri_io_1 : std_logic_vector( 1 to 1);
+  signal gpio_0_0_tri_io_2 : std_logic_vector( 2 to 2);
+  signal gpio_0_0_tri_io_3 : std_logic_vector( 3 to 3);
+  signal gpio_0_0_tri_io_4 : std_logic_vector( 4 to 4);
+  signal gpio_0_0_tri_io_5 : std_logic_vector( 5 to 5);
+  signal gpio_0_0_tri_o_0  : std_logic_vector( 0 to 0);
+  signal gpio_0_0_tri_o_1  : std_logic_vector( 1 to 1);
+  signal gpio_0_0_tri_o_2  : std_logic_vector( 2 to 2);
+  signal gpio_0_0_tri_o_3  : std_logic_vector( 3 to 3);
+  signal gpio_0_0_tri_o_4  : std_logic_vector( 4 to 4);
+  signal gpio_0_0_tri_o_5  : std_logic_vector( 5 to 5);
+  signal gpio_0_0_tri_t_0  : std_logic_vector( 0 to 0);
+  signal gpio_0_0_tri_t_1  : std_logic_vector( 1 to 1);
+  signal gpio_0_0_tri_t_2  : std_logic_vector( 2 to 2);
+  signal gpio_0_0_tri_t_3  : std_logic_vector( 3 to 3);
+  signal gpio_0_0_tri_t_4  : std_logic_vector( 4 to 4);
+  signal gpio_0_0_tri_t_5  : std_logic_vector( 5 to 5);
 
 begin
 
@@ -184,6 +190,7 @@ begin
       BRAM_PORTB_0_EN                => BRAM_PORTB_0_EN,
       BRAM_PORTB_0_RST               => BRAM_PORTB_0_RST,
       BRAM_PORTB_0_WE(3 downto 0)    => BRAM_PORTB_0_WE(3 downto 0),
+      BTNS_5BITS_TRI_I(4 downto 0)   => BTNS_5BITS_TRI_I(4 downto 0),
       DDR_ADDR(14 downto 0)          => DDR_ADDR(14 downto 0),
       DDR_BA(2 downto 0)             => DDR_BA(2 downto 0),
       DDR_CAS_N                      => DDR_CAS_N,
@@ -224,7 +231,6 @@ begin
       GPIO_0_0_TRI_T(2)              => gpio_0_0_tri_t_2(2),
       GPIO_0_0_TRI_T(1)              => gpio_0_0_tri_t_1(1),
       GPIO_0_0_TRI_T(0)              => gpio_0_0_tri_t_0(0),
-      BTNS_5BITS_TRI_I(4 downto 0)   => BTNS_5BITS_TRI_I(4 downto 0),
       LEDS_8BITS_TRI_O(7 downto 0)   => LEDS_8BITS_TRI_O(7 downto 0),
       SWS_8BITS_TRI_I(7 downto 0)    => SWS_8BITS_TRI_I(7 downto 0),
       PERIPHERAL_ARESETN(0)          => PERIPHERAL_ARESETN(0)
