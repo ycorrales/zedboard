@@ -1,0 +1,48 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * Runtime device-tree overlay for the PS-GPIO / BRAM / OLED design.
+ *
+ * Purpose: rebind the PL peripherals to userspace (generic-uio) WITHOUT
+ * recompiling the PYNQ image. Compile to .dtbo and either:
+ *   (a) place zynq_zed.dtbo next to /boot/zynq_zed.bit so pynq.Overlay()
+ *       applies it automatically, or
+ *   (b) load manually via configfs (see build_dtbo.sh header).
+ *
+ * IMPORTANT: this overlay only sets compatible/status. The GIC interrupt
+ * lines for IRQ_F2P (SPI 29 = axi_gpio_1/buttons, SPI 30 = axi_gpio_0/
+ * switches) must already exist on these nodes in the base pl.dtsi. An
+ * overlay can change compatible safely; introducing interrupts is fragile
+ * and is better done in the base tree.
+ *
+ * Node addresses (from zynq_zed.hwh):
+ *   axi_gpio_0  @ 0x41200000  (switches CH2 in -> LEDs CH1 out)
+ *   axi_gpio_1  @ 0x41210000  (buttons CH1 in)
+ *   axi_bram_ctrl_0 @ 0x40000000
+ *
+ * Match the label path to your base tree's PL bus node. On PYNQ 3.1 /
+ * Zynq-7000 this is typically /amba_pl@0 or /amba_pl. Adjust the &{...}
+ * target below if `dtc` reports an unresolved path at apply time.
+ */
+
+&{/amba_pl@0} {
+
+    /* Switch/LED GPIO -> UIO (interrupt inherited from base pl.dtsi) */
+    axi_gpio_0@41200000 {
+        compatible = "generic-uio";
+        status = "okay";
+    };
+
+    /* Button GPIO -> UIO (interrupt inherited from base pl.dtsi) */
+    axi_gpio_1@41210000 {
+        compatible = "generic-uio";
+        status = "okay";
+    };
+
+    /* BRAM controller -> UIO (no interrupt) */
+    axi_bram_ctrl_0@40000000 {
+        compatible = "generic-uio";
+        status = "okay";
+    };
+};
