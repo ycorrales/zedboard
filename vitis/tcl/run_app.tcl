@@ -1,3 +1,23 @@
+proc find_bit_files_recursive {dir} {
+    set files {}
+
+    # 1. Grab all .bit files in the current folder
+    append files [glob -nocomplain -directory $dir -- *.bit]
+
+    # 2. Loop through every subdirectory and call this function again
+    foreach subdir [glob -nocomplain -type d -directory $dir -- *] {
+        # Skip standard system pointer paths . and ..
+        if {[file tail $subdir] eq "." || [file tail $subdir] eq ".."} {continue}
+
+        # Recursively search the subfolder
+        set sub_files [find_bit_files_recursive $subdir]
+        if {[llength $sub_files] > 0} {
+            set files [concat $files $sub_files]
+        }
+    }
+    return $files
+}
+
 # 1. Get the absolute path of the executing script
 set script_path [file normalize [info script]]
 set tcl_dir [file dirname $script_path]
@@ -9,11 +29,12 @@ puts "The bin directories are: "
 puts "vitis bin: $vitis_bin_dir"
 puts "vivado bin: $viv_bin_dir"
 
+set bit_files [find_bit_files_recursive $viv_bin_dir]
 
-set bit_files [glob -nocomplain "$viv_bin_dir/*.bit"]
 if {[llength $bit_files] > 0} {
     # Extract the first matching file path
-    set full_bit_path [lindex $bit_files 0]
+    set pattern "*ps-gpio-*"
+    set full_bit_path [lsearch -all -inline $bit_files $pattern]
 
     # Get just the filename (e.g., "system.bit") without the full directory path
     set bit_filename [file tail $full_bit_path]
@@ -43,7 +64,7 @@ after 200
 
 # 4. Select the physical Zynq chip target and shift the FPGA Bitstream
 targets -set -nocase -filter {name =~ "*xc7z020*"}
-fpga $viv_bin_dir/$bit_filename
+fpga $full_bit_path
 after 500
 
 # 5. Return to the core processor context to wipe registers
