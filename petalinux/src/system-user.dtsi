@@ -1,0 +1,42 @@
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+/include/ "system-conf.dtsi"
+
+&amba {
+    /* ---- Existing OLED over EMIO (unchanged) ---- */
+    oled: oled-ssd1306 {
+        compatible = "digilent,zed-oled-emio";
+
+        dc-gpios    = <&gpio0 54 GPIO_ACTIVE_HIGH>;
+        reset-gpios = <&gpio0 55 GPIO_ACTIVE_LOW>;
+        sclk-gpios  = <&gpio0 56 GPIO_ACTIVE_HIGH>;
+        data-gpios  = <&gpio0 57 GPIO_ACTIVE_HIGH>;
+        vbat-gpios  = <&gpio0 58 GPIO_ACTIVE_LOW>;
+        vdd-gpios   = <&gpio0 59 GPIO_ACTIVE_LOW>;
+
+        status = "okay";
+    };
+};
+
+/* Switch/LED GPIO -> UIO (interrupt 30 inherited from pl.dtsi) */
+&axi_gpio_0 {
+    compatible = "generic-uio";
+    status = "okay";
+};
+
+/* Button GPIO -> UIO (interrupt 29 inherited from pl.dtsi) */
+&axi_gpio_1 {
+    compatible = "generic-uio";
+    status = "okay";
+};
+
+/* BRAM controller -> UIO (no interrupt) */
+&axi_bram_ctrl_0 {
+    compatible = "generic-uio";
+    status = "okay";
+};
+
+
+
+
+

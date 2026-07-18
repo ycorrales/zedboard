@@ -1,0 +1,25 @@
+#!/bin/sh
+# Unload PMod OLED GPIO driver
+
+MODULE_NAME="pmodoled_gpio" # Kernel name (underscores)
+
+# Check if module is loaded
+if ! grep -q "$MODULE_NAME" /proc/modules 2>/dev/null; then
+  echo "[INFO] $MODULE_NAME is not loaded"
+  exit 0
+fi
+
+if [ "$(id -u)" -eq 0 ]; then
+  echo "[INFO] Unloading $MODULE_NAME..."
+  if rmmod "$MODULE_NAME"; then
+    echo "[OK] $MODULE_NAME unloaded successfully"
+    exit 0
+  else
+    echo "[ERROR] Failed to unload $MODULE_NAME (in use?)"
+    lsof | grep zed_oled || true
+    exit 1
+  fi
+else
+  echo "[ERROR] Run as root to unload module $MODULE_NAME!"
+  exit 1
+fi
