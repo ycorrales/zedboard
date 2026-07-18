@@ -1,0 +1,26 @@
+**/.ipynb*
+**/.wsdata
+
+## OS
+.DS_Store
+.DS_Store?
+.Trashes
+**.Trashes
+ehthumbs.db
+Thumbs.db
+
+## MISCELLANEA
+**.tmp
+!/.gitignore
+bin
+gitk
+*~
+**.pyc
+Doc/*
+**.log
+DCPs/
+**/NA/
+
+## CERNbox
+._*
+**._*
