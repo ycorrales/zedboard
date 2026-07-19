@@ -2,8 +2,9 @@
 #include "platform.h"
 #include "xgpio.h"
 #include "xil_exception.h"
+#include "xintc.h"  // For cascaded AXI Interrupt Controller
 #include "xparameters.h"
-#include "xscugic.h"
+#include "xscugic.h"  // For primary ARM processor interrupts
 
 #define LED_CHANNEL 1
 #define SWITCH_CHANNEL 2
@@ -13,8 +14,23 @@
 #define DBUT_CHANNEL 1
 #define DBUT_MASK 0x1F
 
+// Device ID definition mapping for the driver initialization lookup
+#define INTC_DEVICE_ID 0
+
+// Sequential hardware input indexes extracted straight from your xparameters.h
+#define AXI_INTC_GPIO0_INTR_ID XPAR_FABRIC_AXI_GPIO_0_INTR  // Maps to index 1
+#define AXI_INTC_GPIO1_INTR_ID XPAR_FABRIC_AXI_GPIO_1_INTR  // Maps to index 0
+
+// Hardcoded cascading mapping slot for Zynq IRQ_F2P on your Zedboard
+#define ZYNQ_F2P_HARDWARE_ID 61U
+
 XGpio Gpio0, Gpio1;
-XScuGic Intc;
+XScuGic IntcInstanceGic;  // Primary GIC Instance
+XIntc IntcInstanceAxi;    // Cascaded AXI Intc Instance
+
+// VISUAL ANCHOR: Global volatile flags for ISR communication
+volatile u32 SwitchChangedFlag = 0;
+volatile u32 ButtonChangedFlag = 0;
 
 void leds()
 {
@@ -31,7 +47,8 @@ void Gpio0_InterruptHandler(void *InstancePtr)
 {
   XGpio_InterruptClear((XGpio *) InstancePtr, XGPIO_IR_CH2_MASK);
   // TODO: Add your custom GPIO 0 logic here (e.g., toggle an LED, set a flag)
-  leds();
+  // Set flag and exit immediately. Do not print here.
+  SwitchChangedFlag = 1;
 }
 
 // Interrupt Handler for GPIO 1
@@ -39,60 +56,97 @@ void Gpio1_InterruptHandler(void *InstancePtr)
 {
   XGpio_InterruptClear((XGpio *) InstancePtr, XGPIO_IR_CH1_MASK);
   // TODO: Add your custom GPIO 1 logic here
+  // Set flag and exit immediately. Do not print here.
+  ButtonChangedFlag = 1;
 }
 
 int SetupInterruptSystem()
 {
-  XScuGic_Config *IntcConfig;
   int Status;
+  XScuGic_Config *GicConfig;
 
-  // 1. Initialize the Interrupt Controller
-  IntcConfig = XScuGic_LookupConfig(XPAR_SCUGIC_SINGLE_DEVICE_ID);
-  if (IntcConfig == NULL)
+  // =========================================================================
+  // STEP 1: Initialize Primary Zynq GIC
+  // =========================================================================
+  GicConfig = XScuGic_LookupConfig(XPAR_SCUGIC_SINGLE_DEVICE_ID);
+  if (GicConfig == NULL)
   {
     return XST_FAILURE;
   }
-  Status = XScuGic_CfgInitialize(&Intc, IntcConfig, IntcConfig->CpuBaseAddress);
+  Status = XScuGic_CfgInitialize(&IntcInstanceGic, GicConfig, GicConfig->CpuBaseAddress);
   if (Status != XST_SUCCESS)
   {
     return Status;
   }
 
-  // Calculate the REAL GIC IDs required by adding the 32 SPI architecture offset
-  // Vitis Unified extracted the index 30, but forgot to add the architecture offset.
-  u32 RealGpio0IntrId = XPAR_FABRIC_AXI_GPIO_0_INTR + 32;  // Resolves to 62
-  u32 RealGpio1IntrId = XPAR_FABRIC_AXI_GPIO_1_INTR + 32;  // Resolves to 61
-
-  // 2. Set the priority and trigger type to Level-Sensitive Active-High (Required for AXI GPIO)
-  XScuGic_SetPriorityTriggerType(&Intc, RealGpio0IntrId, 0xA0, 3);
-  XScuGic_SetPriorityTriggerType(&Intc, RealGpio1IntrId, 0xA0, 3);
-
-  // 3. Connect and Enable GPIO 0 Handler (Switches & LEDs)
-  Status = XScuGic_Connect(&Intc, RealGpio0IntrId, (Xil_ExceptionHandler) Gpio0_InterruptHandler, &Gpio0);
+  // =========================================================================
+  // STEP 2: Initialize Cascaded AXI Interrupt Controller (Fixed Clang Error)
+  // =========================================================================
+  Status = XIntc_Initialize(&IntcInstanceAxi, INTC_DEVICE_ID);
   if (Status != XST_SUCCESS)
   {
     return Status;
   }
-  XScuGic_Enable(&Intc, RealGpio0IntrId);
 
-  // 4. Connect and Enable GPIO 1 Handler (Buttons)
-  Status = XScuGic_Connect(&Intc, RealGpio1IntrId, (Xil_ExceptionHandler) Gpio1_InterruptHandler, &Gpio1);
+  // =========================================================================
+  // STEP 3: Connect AXI Intc Handler as a Sub-Routine to the Zynq GIC
+  // =========================================================================
+  u32 ZynqF2pIntrId = ZYNQ_F2P_HARDWARE_ID;
+
+  XScuGic_SetPriorityTriggerType(&IntcInstanceGic, ZynqF2pIntrId, 0xA0, 3);
+
+  Status = XScuGic_Connect(&IntcInstanceGic, ZynqF2pIntrId,
+                           (Xil_ExceptionHandler) XIntc_InterruptHandler,
+                           &IntcInstanceAxi);
   if (Status != XST_SUCCESS)
   {
     return Status;
   }
-  XScuGic_Enable(&Intc, RealGpio1IntrId);
+  XScuGic_Enable(&IntcInstanceGic, ZynqF2pIntrId);
 
-  // 5. Enable hardware CPU exception handling hooks
+  // =========================================================================
+  // STEP 4: Connect GPIO Hardware Instances via your xparameters.h flags
+  // =========================================================================
+  Status = XIntc_Connect(&IntcInstanceAxi, AXI_INTC_GPIO0_INTR_ID,
+                         (XInterruptHandler) Gpio0_InterruptHandler,
+                         &Gpio0);
+  if (Status != XST_SUCCESS)
+  {
+    return Status;
+  }
+  XIntc_Enable(&IntcInstanceAxi, AXI_INTC_GPIO0_INTR_ID);
+
+  Status = XIntc_Connect(&IntcInstanceAxi, AXI_INTC_GPIO1_INTR_ID,
+                         (XInterruptHandler) Gpio1_InterruptHandler,
+                         &Gpio1);
+  if (Status != XST_SUCCESS)
+  {
+    return Status;
+  }
+  XIntc_Enable(&IntcInstanceAxi, AXI_INTC_GPIO1_INTR_ID);
+
+  // =========================================================================
+  // STEP 5: Start Controllers and Enable Hardware Exception Lines
+  // =========================================================================
+  Status = XIntc_Start(&IntcInstanceAxi, XIN_REAL_MODE);
+  if (Status != XST_SUCCESS)
+  {
+    return Status;
+  }
+
   Xil_ExceptionInit();
-  Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT, (Xil_ExceptionHandler) XScuGic_InterruptHandler, &Intc);
+  Xil_ExceptionRegisterHandler(XIL_EXCEPTION_ID_INT,
+                               (Xil_ExceptionHandler) XScuGic_InterruptHandler,
+                               &IntcInstanceGic);
   Xil_ExceptionEnable();
 
-  // 6. Enable individual AXI peripheral channel interrupt logic
-  XGpio_InterruptEnable(&Gpio0, XGPIO_IR_CH2_MASK);  // Enable Channel 2 explicitly for Switches
+  // =========================================================================
+  // STEP 6: Enable Individual Hardware Channels inside AXI Peripherals
+  // =========================================================================
+  XGpio_InterruptEnable(&Gpio0, XGPIO_IR_CH2_MASK);
   XGpio_InterruptGlobalEnable(&Gpio0);
 
-  XGpio_InterruptEnable(&Gpio1, XGPIO_IR_CH1_MASK);  // Enable Channel 1 explicitly for Buttons
+  XGpio_InterruptEnable(&Gpio1, XGPIO_IR_CH1_MASK);
   XGpio_InterruptGlobalEnable(&Gpio1);
 
   return XST_SUCCESS;
@@ -141,7 +195,18 @@ int main(void)
   // Infinite processing loop waiting for interrupts
   while (1)
   {
-    // The CPU will stay here; when an input toggles, the GIC will jump to handlers
+    if (SwitchChangedFlag)
+    {
+      SwitchChangedFlag = 0;  // Clear the application flag
+      leds();                 // Process the slow operation safely out of ISR context
+    }
+
+    if (ButtonChangedFlag)
+    {
+      ButtonChangedFlag = 0;
+      u32 buttons = XGpio_DiscreteRead(&Gpio1, DBUT_CHANNEL);
+      xil_printf("Button Pressed: 0x%02x\r\n", buttons);
+    }
   }
 
   cleanup_platform();
