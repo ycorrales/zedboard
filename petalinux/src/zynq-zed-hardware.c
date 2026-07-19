@@ -22,11 +22,21 @@
 // Per-device mmap window sizes (MUST match /sys/class/uio/uioN/maps/map0/size)
 #define MAP_SIZE_GPIO 0x1000  // AXI GPIO cores  = 4 KB
 #define MAP_SIZE_BRAM 0x2000  // AXI BRAM ctrl   = 8 KB
+#define MAP_SIZE_INTC 0x1000  // AXI INTC core   = 4 KB (Matches uio1 window)
 
 // --- UIO device nodes (verified via /sys/class/uio/uioN/name) ---
 #define UIO_BRAM_DEV "/dev/uio0"  // axi_bram_ctrl@40000000  (8 KB, no IRQ)
-#define UIO_GPIO_DEV "/dev/uio1"  // gpio@41200000 switches/LEDs, SPI 62 / virq 39
-#define UIO_BTN_DEV "/dev/uio2"   // gpio@41210000 buttons,       SPI 61 / virq 40
+#define UIO_DATA_DEV "/dev/uio1"  // Map 0 = INTC, Map 1 = Sw/LEDs, Map 2 = Buttons
+
+// --- Xilinx AXI Interrupt Controller (INTC) Register Offsets ---
+#define INTC_ISR_OFFSET 0x0000
+#define INTC_IER_OFFSET 0x0008
+#define INTC_IAR_OFFSET 0x000C
+#define INTC_MER_OFFSET 0x001C
+
+// INTC Pin Mapping indexes (xlconcat entries)
+#define INTC_MASK_GPIO_SW_LED 0x01
+#define INTC_MASK_GPIO_BTNS 0x02
 
 // --- AXI GPIO register offsets ---
 #define GPIO_DATA_OFFSET 0x0000   // Ch1 Data (LEDs / buttons)
@@ -74,13 +84,13 @@
 // =============================================================================
 // Globals
 // =============================================================================
-uint8_t *gpio_ptr = NULL;
 uint8_t *bram_ptr = NULL;
+uint8_t *intc_ptr = NULL;
+uint8_t *gpio_ptr = NULL;
 uint8_t *btn_ptr = NULL;
 
-int uio_gpio_fd = -1;
 int uio_bram_fd = -1;
-int uio_btn_fd = -1;
+int uio_intc_fd = -1;
 
 uint32_t local_bram_cache[BRAM_DEPTH_WORDS] = {0};
 volatile uint32_t current_switches = 0;
@@ -217,108 +227,104 @@ const char *html_dashboard =
 // =============================================================================
 // Thread: Switch IRQ -> edge-driven, debounced LEDs
 // =============================================================================
-void *switch_irq_thread(void *arg)
+// =============================================================================
+// Unified Multi-Map Cascade Interrupt Handler Thread
+// =============================================================================
+void *unified_irq_thread(void *arg)
 {
   (void) arg;
   uint32_t reenable = 1, irq_count;
+  uint32_t prev_btn_state = 0;
 
   while (keep_running)
   {
-    if (write(uio_gpio_fd, &reenable, sizeof(reenable)) != (ssize_t) sizeof(reenable))
+    // Write 1 to arm the Linux UIO interrupt framework
+    if (write(uio_intc_fd, &reenable, sizeof(reenable)) != (ssize_t) sizeof(reenable))
     {
       if (errno == EINTR) continue;
       break;
     }
-    ssize_t n = read(uio_gpio_fd, &irq_count, sizeof(irq_count));
+
+    // Block on cascade AXI INTC via hardware wait queue
+    ssize_t n = read(uio_intc_fd, &irq_count, sizeof(irq_count));
     if (n != (ssize_t) sizeof(irq_count))
-    {
-      if (errno == EINTR) continue;  // woken by SIG_WAKE on shutdown
-      break;
-    }
-    if (!keep_running) break;
-
-    // Debounce: require 3 consistent reads
-    uint32_t sample = 0, prev = ~0u;
-    for (int stable = 0; stable < 3 && keep_running;)
-    {
-      usleep(DEBOUNCE_MS * 1000);
-      sample = REG_READ(gpio_ptr, GPIO2_DATA_OFFSET);
-      stable = (sample == prev) ? (stable + 1) : 0;
-      prev = sample;
-    }
-
-    pthread_mutex_lock(&hardware_mutex);
-    uint32_t isr = REG_READ(gpio_ptr, GPIO_IPISR);
-    REG_WRITE(gpio_ptr, GPIO_IPISR, isr);  // clear all pending
-    current_switches = sample;
-    led_apply(LED_SWITCH_MASK, (uint8_t) (sample & LED_SWITCH_MASK));
-    pthread_mutex_unlock(&hardware_mutex);
-
-    syslog(LOG_INFO, "SW IRQ: switches=0x%02X", sample & 0xFF);
-  }
-  return NULL;
-}
-
-// =============================================================================
-// Thread: Button IRQ -> debounced actions
-// =============================================================================
-void *button_irq_thread(void *arg)
-{
-  (void) arg;
-  uint32_t reenable = 1, irq_count, prev_state = 0;
-
-  while (keep_running)
-  {
-    if (write(uio_btn_fd, &reenable, sizeof(reenable)) != (ssize_t) sizeof(reenable))
     {
       if (errno == EINTR) continue;
       break;
     }
-    ssize_t n = read(uio_btn_fd, &irq_count, sizeof(irq_count));
-    if (n != (ssize_t) sizeof(irq_count))
-    {
-      if (errno == EINTR) continue;  // woken by SIG_WAKE on shutdown
-      break;
-    }
     if (!keep_running) break;
 
-    // Debounce
-    uint32_t sample = 0, prev = ~0u;
-    for (int stable = 0; stable < 3 && keep_running;)
-    {
-      usleep(DEBOUNCE_MS * 1000);
-      sample = REG_READ(btn_ptr, BTN_DATA_OFFSET) & BTN_MASK;
-      stable = (sample == prev) ? (stable + 1) : 0;
-      prev = sample;
-    }
-
     pthread_mutex_lock(&hardware_mutex);
-    uint32_t isr = REG_READ(btn_ptr, GPIO_IPISR);
-    REG_WRITE(btn_ptr, GPIO_IPISR, isr);
-    current_buttons = sample;
-
-    uint32_t pressed = sample & ~prev_state;  // rising edges
-    prev_state = sample;
-
-    if (pressed & BTN_CENTER)
-      led_apply(LED_SWITCH_MASK, (uint8_t) (~led_state & LED_SWITCH_MASK));  // flash
-    if (pressed & BTN_UP)
-    {
-      REG_WRITE(bram_ptr, 0x0, 0xDEAD0001);
-      local_bram_cache[0] = 0xDEAD0001;
-      log_change_csv(0x0, 0xDEAD0001);
-    }
-    if (pressed & BTN_DOWN)
-    {
-      REG_WRITE(bram_ptr, 0x0, 0x0);
-      local_bram_cache[0] = 0x0;
-      log_change_csv(0x0, 0x0);
-    }
-    // BTN_LEFT / BTN_RIGHT reserved (e.g., OLED page navigation)
+    uint32_t active_interrupts = REG_READ(intc_ptr, INTC_ISR_OFFSET);
     pthread_mutex_unlock(&hardware_mutex);
 
-    if (pressed)
-      syslog(LOG_INFO, "BTN: raw=0x%02X pressed=0x%02X", sample, pressed);
+    // -------------------------------------------------------------------------
+    // Processing Path 1: Toggle Switch Inputs Checked
+    // -------------------------------------------------------------------------
+    if (active_interrupts & INTC_MASK_GPIO_SW_LED)
+    {
+      uint32_t sample = 0, prev = ~0u;
+      for (int stable = 0; stable < 3 && keep_running;)
+      {
+        usleep(DEBOUNCE_MS * 1000);
+        sample = REG_READ(gpio_ptr, GPIO2_DATA_OFFSET);
+        stable = (sample == prev) ? (stable + 1) : 0;
+        prev = sample;
+      }
+
+      pthread_mutex_lock(&hardware_mutex);
+      REG_WRITE(gpio_ptr, GPIO_IPISR, 0x3);  // Clear individual core line channels
+      current_switches = sample;
+      led_apply(LED_SWITCH_MASK, (uint8_t) (sample & LED_SWITCH_MASK));
+      REG_WRITE(intc_ptr, INTC_IAR_OFFSET, INTC_MASK_GPIO_SW_LED);  // Clear wrapper INTC line
+      pthread_mutex_unlock(&hardware_mutex);
+
+      syslog(LOG_INFO, "SW IRQ: switches=0x%02X", sample & 0xFF);
+    }
+
+    // -------------------------------------------------------------------------
+    // Processing Path 2: Push Button Inputs Checked
+    // -------------------------------------------------------------------------
+    if (active_interrupts & INTC_MASK_GPIO_BTNS)
+    {
+      uint32_t sample = 0, prev = ~0u;
+      for (int stable = 0; stable < 3 && keep_running;)
+      {
+        usleep(DEBOUNCE_MS * 1000);
+        sample = REG_READ(btn_ptr, BTN_DATA_OFFSET) & BTN_MASK;
+        stable = (sample == prev) ? (stable + 1) : 0;
+        prev = sample;
+      }
+
+      pthread_mutex_lock(&hardware_mutex);
+      REG_WRITE(btn_ptr, GPIO_IPISR, 0x3);  // Clear individual core line channels
+      current_buttons = sample;
+
+      uint32_t pressed = sample & ~prev_btn_state;  // Parse edge triggers
+      prev_btn_state = sample;
+
+      if (pressed & BTN_CENTER)
+        led_apply(LED_SWITCH_MASK, (uint8_t) (~led_state & LED_SWITCH_MASK));
+
+      if (pressed & BTN_UP)
+      {
+        REG_WRITE(bram_ptr, 0x0, 0xDEAD0001);
+        local_bram_cache[0] = 0xDEAD0001;
+        log_change_csv(0x0, 0xDEAD0001);
+      }
+      if (pressed & BTN_DOWN)
+      {
+        REG_WRITE(bram_ptr, 0x0, 0x0);
+        local_bram_cache[0] = 0x0;
+        log_change_csv(0x0, 0x0);
+      }
+
+      REG_WRITE(intc_ptr, INTC_IAR_OFFSET, INTC_MASK_GPIO_BTNS);  // Clear wrapper INTC line
+      pthread_mutex_unlock(&hardware_mutex);
+
+      if (pressed)
+        syslog(LOG_INFO, "BTN: raw=0x%02X pressed=0x%02X", sample, pressed);
+    }
   }
   return NULL;
 }
@@ -500,15 +506,30 @@ void *web_server_thread(void *arg)
 // =============================================================================
 // Helper: open + mmap a UIO device (size matched per-device)
 // =============================================================================
-static int uio_open_map(const char *dev, int *fd_out, uint8_t **map_out, size_t map_size)
+static int uio_open_map(const char *dev, int *fd_out, uint8_t **map_out, size_t map_size, int map_index)
 {
-  int fd = open(dev, O_RDWR);
-  if (fd < 0)
+  int fd;
+
+  // If the file descriptor is already open (e.g., mapping sequential sub-maps from /dev/uio1),
+  // reuse it instead of opening a brand new file handle which wastes file structures.
+  if (*fd_out >= 0)
   {
-    syslog(LOG_ERR, "open %s: %m", dev);
-    return -1;
+    fd = *fd_out;
   }
-  uint8_t *m = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  else
+  {
+    fd = open(dev, O_RDWR);
+    if (fd < 0)
+    {
+      syslog(LOG_ERR, "open %s: %m", dev);
+      return -1;
+    }
+  }
+
+  // Calculate page-aligned hardware boundary offset: index * 4096 bytes
+  off_t offset = (off_t) map_index * sysconf(_SC_PAGESIZE);
+
+  uint8_t *m = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, offset);
   if (m == MAP_FAILED)
   {
     syslog(LOG_ERR, "mmap %s (size 0x%zx): %m", dev, map_size);
@@ -560,24 +581,25 @@ int main(void)
   signal(SIGPIPE, SIG_IGN);  // don't die on client disconnect mid-write
 
   // --- Open UIO devices (per-device sizes!) ---
-  if (uio_open_map(UIO_BRAM_DEV, &uio_bram_fd, &bram_ptr, MAP_SIZE_BRAM) < 0)
+  if (uio_open_map(UIO_BRAM_DEV, &uio_bram_fd, &bram_ptr, MAP_SIZE_BRAM, 0) < 0)
   {
     closelog();
     exit(EXIT_FAILURE);
   }
-  if (uio_open_map(UIO_GPIO_DEV, &uio_gpio_fd, &gpio_ptr, MAP_SIZE_GPIO) < 0)
+  if (uio_open_map(UIO_DATA_DEV, &uio_intc_fd, &intc_ptr, MAP_SIZE_INTC, 0) < 0)
   {
     munmap(bram_ptr, MAP_SIZE_BRAM);
     close(uio_bram_fd);
     closelog();
     exit(EXIT_FAILURE);
   }
-  if (uio_open_map(UIO_BTN_DEV, &uio_btn_fd, &btn_ptr, MAP_SIZE_GPIO) < 0)
+  if (uio_open_map(UIO_DATA_DEV, &uio_intc_fd, &gpio_ptr, MAP_SIZE_GPIO, 1) < 0 || uio_open_map(UIO_DATA_DEV, &uio_intc_fd, &btn_ptr, MAP_SIZE_GPIO, 2) < 0)
   {
     munmap(bram_ptr, MAP_SIZE_BRAM);
-    munmap(gpio_ptr, MAP_SIZE_GPIO);
+    munmap(intc_ptr, MAP_SIZE_INTC);
+    if (gpio_ptr && gpio_ptr != MAP_FAILED) munmap(gpio_ptr, MAP_SIZE_GPIO);
     close(uio_bram_fd);
-    close(uio_gpio_fd);
+    close(uio_intc_fd);
     closelog();
     exit(EXIT_FAILURE);
   }
@@ -585,6 +607,7 @@ int main(void)
   // --- GPIO directions ---
   REG_WRITE(gpio_ptr, GPIO_TRI_OFFSET, 0x00000000);   // Ch1 = LED outputs
   REG_WRITE(gpio_ptr, GPIO2_TRI_OFFSET, 0xFFFFFFFF);  // Ch2 = switch inputs
+  REG_WRITE(btn_ptr, GPIO_TRI_OFFSET, 0xFFFFFFFF);    // Ch1 = Button inputs
 
   // --- Switch IRQ enable (Channel 2) ---
   REG_WRITE(gpio_ptr, GPIO_IPISR, 0x3);
@@ -595,6 +618,10 @@ int main(void)
   REG_WRITE(btn_ptr, GPIO_IPISR, 0x1);
   REG_WRITE(btn_ptr, GPIO_IPIER, 0x1);
   REG_WRITE(btn_ptr, GPIO_GIER, 0x80000000);
+
+  // --- Configure outer Cascade AXI Interrupt Controller (INTC) core ---
+  REG_WRITE(intc_ptr, INTC_IER_OFFSET, (INTC_MASK_GPIO_SW_LED | INTC_MASK_GPIO_BTNS));
+  REG_WRITE(intc_ptr, INTC_MER_OFFSET, 0x3);  // Enable Hardware Interrupts + Master Enable Flag
 
   // --- Prime caches + initial LED state ---
   for (int i = 0; i < BRAM_DEPTH_WORDS; i++)
@@ -620,15 +647,13 @@ int main(void)
   }
 
   // --- Launch threads (track which succeeded) ---
-  pthread_t web_tid, sw_tid, btn_tid, hb_tid;
+  pthread_t web_tid, irq_tid, hb_tid;
   bool web_ok = (pthread_create(&web_tid, NULL, web_server_thread, NULL) == 0);
-  bool sw_ok = (pthread_create(&sw_tid, NULL, switch_irq_thread, NULL) == 0);
-  bool btn_ok = (pthread_create(&btn_tid, NULL, button_irq_thread, NULL) == 0);
+  bool irq_ok = (pthread_create(&irq_tid, NULL, unified_irq_thread, NULL) == 0);
   bool hb_ok = (pthread_create(&hb_tid, NULL, heartbeat_thread, NULL) == 0);
 
   if (!web_ok) syslog(LOG_ERR, "web thread failed");
-  if (!sw_ok) syslog(LOG_ERR, "switch thread failed");
-  if (!btn_ok) syslog(LOG_ERR, "button thread failed");
+  if (!irq_ok) syslog(LOG_ERR, "unified cascade irq thread failed");
   if (!hb_ok) syslog(LOG_ERR, "heartbeat thread failed");
 
   // --- Main loop: BRAM change monitor + CSV logging ---
@@ -654,18 +679,20 @@ int main(void)
   }
 
   // --- Cleanup ---
-  // Disable interrupts first so no new IRQ fires.
+  syslog(LOG_INFO, "Initiating daemon teardown...");
+
+  // Disable inner and outer hardware interrupt blocks to freeze lines
+  REG_WRITE(intc_ptr, INTC_IER_OFFSET, 0x0);
+  REG_WRITE(intc_ptr, INTC_MER_OFFSET, 0x0);
   REG_WRITE(gpio_ptr, GPIO_GIER, 0x0);
   REG_WRITE(gpio_ptr, GPIO_IPIER, 0x0);
   REG_WRITE(btn_ptr, GPIO_GIER, 0x0);
   REG_WRITE(btn_ptr, GPIO_IPIER, 0x0);
 
-  // Wake IRQ threads blocked in read() so join() doesn't hang until next IRQ.
-  if (sw_ok) pthread_kill(sw_tid, SIG_WAKE);
-  if (btn_ok) pthread_kill(btn_tid, SIG_WAKE);
+  // Force break the blocking read() statement in the unified handler thread
+  if (irq_ok) pthread_kill(irq_tid, SIG_WAKE);
 
-  if (sw_ok) pthread_join(sw_tid, NULL);
-  if (btn_ok) pthread_join(btn_tid, NULL);
+  if (irq_ok) pthread_join(irq_tid, NULL);
   if (hb_ok) pthread_join(hb_tid, NULL);
   if (web_ok) pthread_join(web_tid, NULL);
 
@@ -673,13 +700,13 @@ int main(void)
   if (csv_log) fclose(csv_log);
 
   REG_WRITE(gpio_ptr, GPIO_DATA_OFFSET, 0x00000000);  // LEDs off
-
+  munmap(intc_ptr, MAP_SIZE_INTC);
   munmap(gpio_ptr, MAP_SIZE_GPIO);
-  munmap(bram_ptr, MAP_SIZE_BRAM);
   munmap(btn_ptr, MAP_SIZE_GPIO);
-  close(uio_gpio_fd);
+  munmap(bram_ptr, MAP_SIZE_BRAM);
+
   close(uio_bram_fd);
-  close(uio_btn_fd);
+  close(uio_intc_fd);
   closelog();
 
   return EXIT_SUCCESS;
