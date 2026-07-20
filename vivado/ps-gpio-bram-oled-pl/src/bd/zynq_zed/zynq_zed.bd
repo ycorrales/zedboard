@@ -2442,11 +2442,17 @@
         "xci_path": "ip/zynq_zed_axi_intc_0_0/zynq_zed_axi_intc_0_0.xci",
         "inst_hier_path": "axi_intc_0",
         "parameters": {
+          "C_ASYNC_INTR": {
+            "value": "0x00000002"
+          },
+          "C_EN_CASCADE_MODE": {
+            "value": "0"
+          },
           "C_HAS_FAST": {
             "value": "0"
           },
-          "C_KIND_OF_EDGE": {
-            "value": "0xFFFFFFFF"
+          "C_IRQ_IS_LEVEL": {
+            "value": "1"
           }
         }
       }
